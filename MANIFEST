@@ -3,7 +3,8 @@ lib/Plack/InitScript.pm
 Makefile.PL
 MANIFEST			This list of files
 README
-t/00-load.t
-t/manifest.t
-t/pod-coverage.t
-t/pod.t
+xt/boilerplate.t
+xt/manifest.t
+xt/pod-coverage.t
+xt/pod.t
+t/01-minimal.t

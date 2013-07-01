@@ -12,3 +12,4 @@ pod2htm*.tmp
 Plack-InitScript-*
 MYMETA.*
 META.*
+MANIFEST.bak

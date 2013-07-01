@@ -6,7 +6,7 @@ use warnings;
 
 =head1 NAME
 
-Plack::InitScript - The great new Plack::InitScript!
+Plack::InitScript - Manage multiple PSGI applications with one sys V init script.
 
 =head1 VERSION
 
@@ -14,40 +14,161 @@ Version 0.01
 
 =cut
 
-our $VERSION = '0.01';
-
+our $VERSION = 0.01;
 
 =head1 SYNOPSIS
 
-Quick summary of what the module does.
+    sudo service plack restart foo
 
-Perhaps a little code snippet.
-
-    use Plack::InitScript;
-
-    my $foo = Plack::InitScript->new();
-    ...
-
-=head1 EXPORT
-
-A list of functions that can be exported.  You can delete this section
-if you don't export anything, such as for a purely object-oriented module.
-
-=head1 SUBROUTINES/METHODS
-
-=head2 function1
+=head1 METHODS
 
 =cut
 
-sub function1 {
-}
+use Carp;
+use Daemon::Control;
 
-=head2 function2
+# use YAML::XS; # TODO eval require, fall back to YAML
+use YAML qw(LoadFile);
+
+use fields qw(config apps ports);
+
+=head2 new
 
 =cut
 
-sub function2 {
-}
+sub new {
+	my $class = shift;
+	my %opt = @_; # TODO unused
+	my $self = fields::new($class);
+
+	$self->clear_apps;
+	return $self;
+};
+
+=head2 load_config
+
+=cut
+
+sub load_config {
+	my $self = shift;
+	my $config = shift;
+
+	$config = $self->_load_cf($config);
+
+	# TODO check config for consistency
+
+	$self->{config} = { %$config }; # shallow copy
+	return $self;
+};
+
+=head2 add_app
+
+=cut
+
+sub add_app {
+	my $self = shift;
+	my $app = shift;
+
+	$app = $self->_load_cf( $app );
+
+	# TODO check for consistency
+
+	my @missing = grep { !defined $app->{$_} } qw(name port app);
+	@missing and croak( __PACKAGE__
+		.": mandatory parameters absent: @missing" );
+
+	my $name = $app->{name};
+	my $port = $app->{port};
+
+	# avoid collisions
+	if ($self->{apps}{$name} or $self->{ports}{$port}) {
+		croak __PACKAGE__.": name or port overlaps";
+		# TODO moar details
+	};
+
+	$self->{apps}{$name} = $app;
+	$self->{ports}{$port} = $app;
+	return $self;
+};
+
+=head2 del_app
+
+=cut
+
+sub del_app {
+	my $self = shift;
+
+	foreach (@_) {
+		my $app = $self->get_app_config( $_ );
+		my $port = $app->{port};
+		my $name = $app->{name};
+		delete $self->{apps}{$name};
+		delete $self->{ports}{$port};
+	};
+	return $self;
+};
+
+=head2 service ( "start|stop|restart|status", [ app_name, ... ] )
+
+Perform SysVInit action. Offload to Daemon::Control.
+
+=cut
+
+=head2 get_apps
+
+=cut
+
+sub get_apps {
+	my $self = shift;
+	return keys %{ $self->{apps} }
+};
+
+=head2 get_app_config
+
+=cut
+
+sub get_app_config {
+	my $self = shift;
+
+	if (wantarray and @_ > 1) {
+		croak( __PACKAGE__.":get_app_config: multiple services "
+			."requested in scalar context" );
+	};
+
+	my @fail;
+	my @apps;
+	foreach (@_) {
+		my $app = ($self->{apps}{$_} || $self->{ports}{$_});
+		$app ? ( push @apps, $app ) : ( push @fail, $_ );
+	};
+	@fail and croak( __PACKAGE__.": get_app_config: unknown service(s): @fail");
+
+	return wantarray ? @apps : shift @apps;
+};
+
+=head2 clear_apps
+
+=cut
+
+sub clear_apps {
+	my $self = shift;
+
+	$self->{apps} = {};
+	$self->{ports} = {};
+	return $self;
+};
+
+sub _load_cf {
+	my $self = shift;
+	my $raw = shift;
+
+	# TODO more validate
+	if (!ref $raw or ref $raw eq 'GLOB') {
+		return LoadFile($raw);
+	} else {
+		return { %$raw }; # shallow copy to avoid storing shared data
+	};
+};
 
 =head1 AUTHOR
 
