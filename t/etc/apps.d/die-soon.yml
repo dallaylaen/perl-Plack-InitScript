@@ -1,0 +1,4 @@
+---
+name: die-soon
+port: 5001
+app: t/psgi/die-soon.psgi

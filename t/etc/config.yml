@@ -1,0 +1,6 @@
+---
+defaults:
+    pid_file: rubbish/plack-%p.pid
+    log_file: rubbish/plack-%p.log
+    server: plackup
+apps_d: t/etc/apps.d
