@@ -14,7 +14,7 @@ Version 0.01
 
 =cut
 
-our $VERSION = 0.0101;
+our $VERSION = 0.0102;
 
 =head1 SYNOPSIS
 
@@ -61,6 +61,10 @@ sub load_config {
 	# TODO check config for consistency
 
 	$self->{config} = { %$config }; # shallow copy
+
+	my $def = delete $self->{config}{defaults};
+	$def and $self->set_defaults( %$def );
+
 	return $self;
 };
 
@@ -76,6 +80,28 @@ sub set_defaults {
 
 	my $olddef = $self->{defaults} || {};
 	$self->{defaults} = { %$olddef, %def };
+	return $self;
+};
+
+=head2 load_apps
+
+Load all apps based on config
+
+=cut
+
+sub load_apps {
+	my $self = shift;
+
+	my $dir = $self->{config}{services_d};
+
+	opendir (my $dh, $dir)
+		or croak( __PACKAGE__.": failed to open $dir: $!");
+
+	while (my $fname = readdir $dh) {
+		$fname =~ /^\./ and next; # skip dot files
+		$self->add_app( "$dir/$fname" );
+	};
+	closedir $dh;
 	return $self;
 };
 
@@ -163,14 +189,18 @@ sub get_init_options {
 	my $id = shift;
 
 	my $app = $self->get_app_config($id);
+
+	my $logfile = $self->_format($app->{log_file}, $app);
+	my $pidfile = "$app->{pid_file}.$app->{port}";
+	my @args = ( "--listen", ":$app->{port}", $app->{app} );
 	my %opt = (
 		name => "$app->{server} $app->{name}",
 		program => $app->{server},
 		# TODO more flexible args fmt
-		program_args => [ "--listen", ":$app->{port}", $app->{app} ],
-		pid_file => "$app->{pid_file}.$app->{port}",
-		stderr_file => $app->{log},
-		stdout_file => $app->{log},
+		program_args => \@args,
+		pid_file => $pidfile,
+		stderr_file => $logfile,
+		stdout_file => $logfile,
 		fork => 2,
 	);
 
