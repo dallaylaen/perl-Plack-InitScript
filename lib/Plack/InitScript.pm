@@ -14,7 +14,7 @@ Version 0.01
 
 =cut
 
-our $VERSION = 0.0103;
+our $VERSION = 0.0104;
 
 =head1 SYNOPSIS
 
@@ -166,7 +166,7 @@ sub service {
 	my ($action, @list) = @_;
 
 	if (!@list) {
-		die "TODO find active services";
+		@list = keys %{ $self->{apps} };
 	};
 
 	(!grep { $action eq $_ } qw(start stop restart status))
@@ -197,7 +197,7 @@ sub get_init_options {
 	my $pidfile = $self->_format($app->{pid_file}, $app);
 	my @args = ( "--listen", ":$app->{port}", $app->{app} );
 	my %opt = (
-		name => "$app->{server} $app->{name}",
+		name => "$app->{port} '$app->{name}' ($app->{server})",
 		program => $app->{server},
 		# TODO more flexible args fmt
 		program_args => \@args,
