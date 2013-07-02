@@ -25,7 +25,7 @@ alarm 10;
 $SIG{__DIE__} = \&Carp::confess;
 
 my $plin = Plack::InitScript->new;
-$plin->set_defaults( pid_file => "$dir/pid", server => 'plackup',
+$plin->set_defaults( pid_file => "$dir/pid.%p", server => 'plackup',
 	log_file => "$dir/log" );
 
 $plin->add_app({ name => 'foo', port => $port, app => "$Bin/psgi/die-soon.psgi" });

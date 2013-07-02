@@ -14,7 +14,7 @@ Version 0.01
 
 =cut
 
-our $VERSION = 0.0102;
+our $VERSION = 0.0103;
 
 =head1 SYNOPSIS
 
@@ -80,6 +80,9 @@ sub set_defaults {
 
 	my $olddef = $self->{defaults} || {};
 	$self->{defaults} = { %$olddef, %def };
+
+	# TODO fail if $pid_file !~ %p || %n
+
 	return $self;
 };
 
@@ -92,7 +95,7 @@ Load all apps based on config
 sub load_apps {
 	my $self = shift;
 
-	my $dir = $self->{config}{services_d};
+	my $dir = $self->{config}{apps_d};
 
 	opendir (my $dh, $dir)
 		or croak( __PACKAGE__.": failed to open $dir: $!");
@@ -191,7 +194,7 @@ sub get_init_options {
 	my $app = $self->get_app_config($id);
 
 	my $logfile = $self->_format($app->{log_file}, $app);
-	my $pidfile = "$app->{pid_file}.$app->{port}";
+	my $pidfile = $self->_format($app->{pid_file}, $app);
 	my @args = ( "--listen", ":$app->{port}", $app->{app} );
 	my %opt = (
 		name => "$app->{server} $app->{name}",
