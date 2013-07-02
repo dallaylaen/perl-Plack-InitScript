@@ -1,8 +1,8 @@
-package Plack::InitScript;
-
 use 5.006;
 use strict;
-use warnings;
+use warnings FATAL => 'all';
+
+package Plack::InitScript;
 
 =head1 NAME
 
@@ -14,7 +14,7 @@ Version 0.01
 
 =cut
 
-our $VERSION = 0.01;
+our $VERSION = 0.0101;
 
 =head1 SYNOPSIS
 
@@ -30,7 +30,10 @@ use Daemon::Control;
 # use YAML::XS; # TODO eval require, fall back to YAML
 use YAML qw(LoadFile);
 
-use fields qw(config apps ports);
+use fields qw(config apps ports defaults);
+our @SERVICE_FIELDS = qw( name port app format pidfile logfile server );
+my %SERVICE_FIELDS;
+@SERVICE_FIELDS{@SERVICE_FIELDS} = @SERVICE_FIELDS; # make hash for search
 
 =head2 new
 
@@ -61,6 +64,21 @@ sub load_config {
 	return $self;
 };
 
+=head2 set_defaults ( %hash )
+
+Set up default values (pid_file, etc) for services.
+
+=cut
+
+sub set_defaults {
+	my $self = shift;
+	my %def = @_;
+
+	my $olddef = $self->{defaults} || {};
+	$self->{defaults} = { %$olddef, %def };
+	return $self;
+};
+
 =head2 add_app
 
 =cut
@@ -69,6 +87,7 @@ sub add_app {
 	my $self = shift;
 	my $app = shift;
 
+	defined $app or croak( __PACKAGE__.": Nothing given to add_app" );
 	$app = $self->_load_cf( $app );
 
 	# TODO check for consistency
@@ -98,12 +117,11 @@ sub add_app {
 sub del_app {
 	my $self = shift;
 
-	foreach (@_) {
-		my $app = $self->get_app_config( $_ );
-		my $port = $app->{port};
-		my $name = $app->{name};
-		delete $self->{apps}{$name};
-		delete $self->{ports}{$port};
+	my @apps = $self->get_app_config(@_);
+
+	foreach (@apps) {
+		delete $self->{apps}{ $_->{name} };
+		delete $self->{ports}{ $_->{port} };
 	};
 	return $self;
 };
@@ -113,6 +131,69 @@ sub del_app {
 Perform SysVInit action. Offload to Daemon::Control.
 
 =cut
+
+sub service {
+	my $self = shift;
+	my ($action, @list) = @_;
+
+	if (!@list) {
+		die "TODO find active services";
+	};
+
+	(!grep { $action eq $_ } qw(start stop restart status))
+		and croak( __PACKAGE__.": unknown action $action");
+
+	$action = "do_$action";
+	foreach (@list) {
+		my $opt = $self->get_init_options($_);
+		my $daemon = Daemon::Control->new($opt);
+		$daemon->$action();
+	};
+
+};
+
+=head2 get_init_options( $service_id )
+
+Get Daemon::Control config for service.
+
+=cut
+
+sub get_init_options {
+	my $self = shift;
+	my $id = shift;
+
+	my $app = $self->get_app_config($id);
+	my %opt = (
+		name => "$app->{server} $app->{name}",
+		program => $app->{server},
+		# TODO more flexible args fmt
+		program_args => [ "--listen", ":$app->{port}", $app->{app} ],
+		pid_file => "$app->{pid_file}.$app->{port}",
+		stderr_file => $app->{log},
+		stdout_file => $app->{log},
+		fork => 2,
+	);
+
+	return \%opt;
+};
+
+sub _format {
+	my $self = shift;
+	my ($format, $hash) = @_;
+
+	my %subst = (
+		'%' => '%',
+		p => $hash->{port},
+		n => $hash->{name},
+	);
+
+	my $str = $format;
+	$str =~ s(%(.))
+		(defined $subst{$1} ? $subst{$1}
+			: croak __PACKAGE__."Unknown substitute '%$1'"
+		)xge;
+	return $str;
+};
 
 =head2 get_apps
 
@@ -135,11 +216,17 @@ sub get_app_config {
 			."requested in scalar context" );
 	};
 
+	my $def = $self->{defaults} || {};
 	my @fail;
 	my @apps;
 	foreach (@_) {
 		my $app = ($self->{apps}{$_} || $self->{ports}{$_});
-		$app ? ( push @apps, $app ) : ( push @fail, $_ );
+		if (!$app) {
+			push @fail, $_;
+			next;
+		};
+		$app = { %$def, %$app };
+		push @apps, $app;
 	};
 	@fail and croak( __PACKAGE__.": get_app_config: unknown service(s): @fail");
 

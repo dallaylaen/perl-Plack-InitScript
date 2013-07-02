@@ -8,3 +8,5 @@ xt/manifest.t
 xt/pod-coverage.t
 xt/pod.t
 t/01-minimal.t
+t/02-psgi.t
+t/psgi/die-soon.psgi
