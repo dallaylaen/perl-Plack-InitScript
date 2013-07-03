@@ -6,6 +6,7 @@ use IO::Socket::INET;
 use FindBin qw($Bin);
 use File::Temp qw(tempdir);
 use LWP::UserAgent;
+use English;
 
 use Plack::InitScript;
 
@@ -24,9 +25,12 @@ alarm 10;
 
 $SIG{__DIE__} = \&Carp::confess;
 
+my ($user)  = getpwuid ( $UID );
+my ($group) = getgrgid ( $GID );
+
 my $plin = Plack::InitScript->new;
 $plin->set_defaults( pid_file => "$dir/pid.%p", server => 'plackup',
-	log_file => "$dir/log" );
+	log_file => "$dir/log", user => $user, group => $group, );
 
 $plin->add_app({ name => 'foo', port => $port, app => "$Bin/psgi/die-soon.psgi" });
 

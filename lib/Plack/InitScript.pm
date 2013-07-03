@@ -14,7 +14,7 @@ Version 0.01
 
 =cut
 
-our $VERSION = 0.0104;
+our $VERSION = 0.0105;
 
 =head1 SYNOPSIS
 
@@ -31,7 +31,8 @@ use Daemon::Control;
 use YAML qw(LoadFile);
 
 use fields qw(config apps ports defaults);
-our @SERVICE_FIELDS = qw( name port app format pidfile logfile server );
+our @SERVICE_FIELDS = qw( app port name user group pid_file log_file
+	server server_args env dir );
 my %SERVICE_FIELDS;
 @SERVICE_FIELDS{@SERVICE_FIELDS} = @SERVICE_FIELDS; # make hash for search
 
@@ -62,6 +63,7 @@ sub load_config {
 
 	$self->{config} = { %$config }; # shallow copy
 
+	delete $self->{defaults};
 	my $def = delete $self->{config}{defaults};
 	$def and $self->set_defaults( %$def );
 
@@ -79,10 +81,29 @@ sub set_defaults {
 	my %def = @_;
 
 	my $olddef = $self->{defaults} || {};
-	$self->{defaults} = { %$olddef, %def };
+	%def = (%$olddef, %def);
 
-	# TODO fail if $pid_file !~ %p || %n
+	# Validate defaults
+	my @error;
+	my @extra = grep { !$SERVICE_FIELDS{$_} } keys %def;
+	push @error, "extra keys present: @extra" if @extra;
 
+	# TODO sometimes we need to start as ordinary user,
+	# and ordinary user cannot setuid. But we also need to make sure
+	# notihng is ever run as root. How?..
+	if (!$self->{config}{allow_nouser}) {
+		$def{user} or push @error, "no user";
+		$def{group} or push @error, "no group";
+	};
+	defined $def{log_file} or push @error, "no log_file";
+	defined $def{pid_file} or push @error, "no pid_file";
+	$def{pid_file} =~ /[^%](%%)*%p/
+		or push @error, "pid_file doesn't depend on port";
+	defined $def{server} or push @error, "no server";
+
+	@error and croak( __PACKAGE__.": found errors in default values: "
+		. join "; ", @error);
+	$self->{defaults} = \%def;
 	return $self;
 };
 
@@ -204,6 +225,8 @@ sub get_init_options {
 		pid_file => $pidfile,
 		stderr_file => $logfile,
 		stdout_file => $logfile,
+		user => $app->{user},
+		group => $app->{group},
 		fork => 2,
 	);
 
