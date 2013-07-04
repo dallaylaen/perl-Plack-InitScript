@@ -14,7 +14,7 @@ Version 0.01
 
 =cut
 
-our $VERSION = 0.0105;
+our $VERSION = 0.0106;
 
 =head1 SYNOPSIS
 
@@ -26,11 +26,12 @@ our $VERSION = 0.0105;
 
 use Carp;
 use Daemon::Control;
+use English;
 
 # use YAML::XS; # TODO eval require, fall back to YAML
 use YAML qw(LoadFile);
 
-use fields qw(config apps ports defaults);
+use fields qw(config apps ports defaults relaxed);
 our @SERVICE_FIELDS = qw( app port name user group pid_file log_file
 	server server_args env dir );
 my %SERVICE_FIELDS;
@@ -44,6 +45,8 @@ sub new {
 	my $class = shift;
 	my %opt = @_; # TODO unused
 	my $self = fields::new($class);
+
+	$self->{relaxed} = $opt{relaxed} unless $EUID == 0;
 
 	$self->clear_apps;
 	return $self;
@@ -91,7 +94,7 @@ sub set_defaults {
 	# TODO sometimes we need to start as ordinary user,
 	# and ordinary user cannot setuid. But we also need to make sure
 	# notihng is ever run as root. How?..
-	if (!$self->{config}{allow_nouser}) {
+	if (!$self->{relaxed}) {
 		$def{user} or push @error, "no user";
 		$def{group} or push @error, "no group";
 	};
@@ -187,19 +190,25 @@ sub service {
 	my ($action, @list) = @_;
 
 	if (!@list) {
-		@list = keys %{ $self->{apps} };
+		@list = keys %{ $self->{ports} };
+	} else {
+		my %known;
+		@list = map { $self->get_app_config($_)->{port} } @list;
+		@list = grep { !$known{$_}++ } @list;
 	};
 
 	(!grep { $action eq $_ } qw(start stop restart status))
 		and croak( __PACKAGE__.": unknown action $action");
 
 	$action = "do_$action";
+	my %stat;
 	foreach (@list) {
 		my $opt = $self->get_init_options($_);
 		my $daemon = Daemon::Control->new($opt);
 		$daemon->$action();
+		$stat{ $_ } = $daemon->read_pid;
 	};
-
+	return \%stat;
 };
 
 =head2 get_init_options( $service_id )

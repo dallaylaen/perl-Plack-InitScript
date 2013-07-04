@@ -15,7 +15,7 @@ my ($action, @svc) = @ARGV;
 
 $SIG{__DIE__} = \&Carp::confess;
 
-my $plis = Plack::InitScript->new;
+my $plis = Plack::InitScript->new( relaxed => 1 );
 $plis->load_config( $config );
 $plis->load_apps;
 

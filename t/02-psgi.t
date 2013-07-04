@@ -1,7 +1,7 @@
 #!/usr/bin/perl -w
 
 use strict;
-use Test::More tests => 4;
+use Test::More tests => 10;
 use IO::Socket::INET;
 use FindBin qw($Bin);
 use File::Temp qw(tempdir);
@@ -36,17 +36,25 @@ $plin->add_app({ name => 'foo', port => $port, app => "$Bin/psgi/die-soon.psgi" 
 
 note explain $plin->get_init_options($port);
 
-$plin->service( "start", "foo" );
-ok (-f "$dir/pid.$port", "pidfile created");
+my $stat = $plin->service( "start", "foo" );
+ok (-f "$dir/pid.$port", "pidfile created"); # TODO check content!
+is_deeply ([ keys %$stat ], [ $port ], "return from service: port=>1");
+ok ( $stat->{$port}, "pid set ($stat->{$port})" );
 
 sleep 1; # TODO replace with logfile content check
 my $resp = $ag->get( $uri );
 ok ($resp->is_success, "request ok!")
 	or diag explain $resp;
 
-$plin->service( "status", "foo" );
-$plin->service( "stop", "foo" );
-$plin->service( "status", "foo" );
+$stat = $plin->service( "status", "foo" );
+is_deeply ([ keys %$stat ], [ $port ], "return from service: port=>1");
+ok ( $stat->{$port}, "pid set ($stat->{$port})" );
+
+$stat = $plin->service( "stop", "foo", $port, "foo" ); # stops once!
+is_deeply ($stat, { $port => 0 }, "return from service: port=>0");
+
+$stat = $plin->service( "status", "foo" );
+is_deeply ($stat, { $port => 0 }, "return from service: port=>0");
 
 $resp = $ag->get( $uri );
 ok (!$resp->is_success, "request not ok!")
