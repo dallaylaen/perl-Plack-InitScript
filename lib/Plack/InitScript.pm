@@ -8,21 +8,18 @@ package Plack::InitScript;
 
 Plack::InitScript - Manage multiple PSGI applications with one sys V init script.
 
-=head1 VERSION
-
-Version 0.01
-
-=cut
-
-our $VERSION = 0.0106;
-
 =head1 SYNOPSIS
 
-    sudo service plack restart foo
+Manage multiple psgi applications via sys V init.
+
+    vim /etc/plack/apps.d/foo.yml
+    service plack restart foo
 
 =head1 METHODS
 
 =cut
+
+our $VERSION = 0.0107;
 
 use Carp;
 use Daemon::Control;
@@ -110,16 +107,17 @@ sub set_defaults {
 	return $self;
 };
 
-=head2 load_apps
+=head2 load_apps( [ $dir ] )
 
-Load all apps based on config
+Load all apps based on config, from given directory or from apps_d.
 
 =cut
 
 sub load_apps {
 	my $self = shift;
+	my $dir = shift;
 
-	my $dir = $self->{config}{apps_d};
+	$dir = $self->{config}{apps_d} unless defined $dir;
 
 	opendir (my $dh, $dir)
 		or croak( __PACKAGE__.": failed to open $dir: $!");
@@ -242,6 +240,8 @@ sub get_init_options {
 	return \%opt;
 };
 
+# pure
+# TODO use String::Format instead?
 sub _format {
 	my $self = shift;
 	my ($format, $hash) = @_;
