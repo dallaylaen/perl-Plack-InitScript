@@ -1,17 +1,25 @@
 #!/usr/bin/perl -w
 
+# TODO Add -T (need Plack::InitScript & Daemon::Control in default @INC for that)
+
 use strict;
-use Plack::InitScript;
+use warnings FATAL=>'all';
 use Getopt::Long;
 use Carp;
+use Plack::InitScript;
 
 my $config = '/etc/plack/config.yml';
 
 GetOptions (
 	"config=s" => \$config,
+	"help" => \&usage,
 ) or die "Bad options";
 
 my ($action, @svc) = @ARGV;
+
+if (!$action) {
+	die "Usage: $0 start|status|restart|stop\n";
+};
 
 $SIG{__DIE__} = \&Carp::confess;
 
@@ -21,4 +29,14 @@ $plis->load_apps;
 
 $plis->service( $action, @svc );
 
-
+sub usage {
+	print <<"EOF";
+Usage: $0 [options] start|stop|restart|status [app ...]
+Start/stop PSGI/Plack applications. If no apps are given, action is
+performed on all known services.
+Options may include:
+  --config <file> - use file as configuration file (must be YAML)
+  --help - this message
+EOF
+	exit 2;
+};
