@@ -19,7 +19,7 @@ Manage multiple psgi applications via sys V init.
 
 =cut
 
-our $VERSION = 0.0107;
+our $VERSION = 0.0108;
 
 use Carp;
 use Daemon::Control;
@@ -28,7 +28,10 @@ use English;
 # use YAML::XS; # TODO eval require, fall back to YAML
 use YAML qw(LoadFile);
 
-use fields qw(config apps ports defaults relaxed);
+use fields qw(
+	config apps ports defaults
+	relaxed daemon_class
+);
 our @SERVICE_FIELDS = qw( app port name user group pid_file log_file
 	server server_args env dir );
 my %SERVICE_FIELDS;
@@ -44,6 +47,7 @@ sub new {
 	my $self = fields::new($class);
 
 	$self->{relaxed} = $opt{relaxed} unless $EUID == 0;
+	$self->{daemon_class} = $opt{daemon_class} || "Daemon::Control";
 
 	$self->clear_apps;
 	return $self;
@@ -202,7 +206,7 @@ sub service {
 	my %stat;
 	foreach (@list) {
 		my $opt = $self->get_init_options($_);
-		my $daemon = Daemon::Control->new($opt);
+		my $daemon = $self->{daemon_class}->new($opt);
 		$daemon->$action();
 		$stat{ $_ } = $daemon->read_pid;
 	};
