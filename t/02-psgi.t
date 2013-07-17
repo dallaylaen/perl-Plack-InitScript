@@ -32,11 +32,11 @@ my $plin = Plack::InitScript->new;
 $plin->set_defaults( pid_file => "$dir/pid.%p", server => 'plackup',
 	log_file => "$dir/log", user => $user, group => $group, );
 
-$plin->add_app({ name => 'foo', port => $port, app => "$Bin/psgi/die-soon.psgi" });
+$plin->add_app({ port => $port, app => "$Bin/psgi/die-soon.psgi" });
 
 note explain $plin->get_init_options($port);
 
-my $stat = $plin->service( "start", "foo" );
+my $stat = $plin->service( start => $port );
 ok (-f "$dir/pid.$port", "pidfile created"); # TODO check content!
 is_deeply ([ keys %$stat ], [ $port ], "return from service: port=>1");
 ok ( $stat->{$port}, "pid set ($stat->{$port})" );
@@ -46,14 +46,14 @@ my $resp = $ag->get( $uri );
 ok ($resp->is_success, "request ok!")
 	or diag explain $resp;
 
-$stat = $plin->service( "status", "foo" );
+$stat = $plin->service( status => $port );
 is_deeply ([ keys %$stat ], [ $port ], "return from service: port=>1");
 ok ( $stat->{$port}, "pid set ($stat->{$port})" );
 
-$stat = $plin->service( "stop", "foo", $port, "foo" ); # stops once!
+$stat = $plin->service( "stop", $port, $port, $port ); # stops once!
 is_deeply ($stat, { $port => 0 }, "return from service: port=>0");
 
-$stat = $plin->service( "status", "foo" );
+$stat = $plin->service( "status", $port );
 is_deeply ($stat, { $port => 0 }, "return from service: port=>0");
 
 $resp = $ag->get( $uri );

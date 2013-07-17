@@ -19,7 +19,7 @@ Manage multiple psgi applications via sys V init.
 
 =cut
 
-our $VERSION = 0.0108;
+our $VERSION = 0.0109;
 
 use Carp;
 use Daemon::Control;
@@ -29,13 +29,13 @@ use English;
 use YAML qw(LoadFile);
 
 use fields qw(
-	config apps ports defaults
+	config ports old_ports alias defaults
 	relaxed daemon_class
 );
-our @SERVICE_FIELDS = qw( app port name user group pid_file log_file
+our @SERVICE_FIELDS = qw( app port user group pid_file log_file
 	server server_args env dir );
 my %SERVICE_FIELDS;
-@SERVICE_FIELDS{@SERVICE_FIELDS} = @SERVICE_FIELDS; # make hash for search
+$SERVICE_FIELDS{$_} = 1 for @SERVICE_FIELDS; # make hash for search
 
 =head2 new
 
@@ -147,20 +147,18 @@ sub add_app {
 
 	# TODO check for consistency
 
-	my @missing = grep { !defined $app->{$_} } qw(name port app);
+	my @missing = grep { !defined $app->{$_} } qw(port app);
 	@missing and croak( __PACKAGE__
 		.": mandatory parameters absent: @missing" );
 
-	my $name = $app->{name};
 	my $port = $app->{port};
 
 	# avoid collisions
-	if ($self->{apps}{$name} or $self->{ports}{$port}) {
-		croak __PACKAGE__.": name or port overlaps";
+	if ($self->{ports}{$port}) {
+		croak __PACKAGE__.": ports overlap: $port";
 		# TODO moar details
 	};
 
-	$self->{apps}{$name} = $app;
 	$self->{ports}{$port} = $app;
 	return $self;
 };
@@ -175,7 +173,6 @@ sub del_app {
 	my @apps = $self->get_app_config(@_);
 
 	foreach (@apps) {
-		delete $self->{apps}{ $_->{name} };
 		delete $self->{ports}{ $_->{port} };
 	};
 	return $self;
@@ -229,7 +226,7 @@ sub get_init_options {
 	my $pidfile = $self->_format($app->{pid_file}, $app);
 	my @args = ( "--listen", ":$app->{port}", $app->{app} );
 	my %opt = (
-		name => "$app->{port} '$app->{name}' ($app->{server})",
+		name => "$app->{port} ($app->{server})",
 		program => $app->{server},
 		# TODO more flexible args fmt
 		program_args => \@args,
@@ -270,7 +267,7 @@ sub _format {
 
 sub get_apps {
 	my $self = shift;
-	return keys %{ $self->{apps} }
+	return keys %{ $self->{ports} }
 };
 
 =head2 get_app_config
@@ -289,7 +286,7 @@ sub get_app_config {
 	my @fail;
 	my @apps;
 	foreach (@_) {
-		my $app = ($self->{apps}{$_} || $self->{ports}{$_});
+		my $app = $self->{ports}{$_};
 		if (!$app) {
 			push @fail, $_;
 			next;
@@ -309,7 +306,6 @@ sub get_app_config {
 sub clear_apps {
 	my $self = shift;
 
-	$self->{apps} = {};
 	$self->{ports} = {};
 	return $self;
 };

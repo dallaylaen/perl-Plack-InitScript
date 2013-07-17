@@ -1,7 +1,7 @@
 #!/usr/bin/perl -w
 
 use strict;
-use Test::More tests => 5;
+use Test::More tests => 4;
 use Test::Exception;
 
 use Plack::InitScript;
@@ -11,13 +11,12 @@ my $plin = Plack::InitScript->new;
 $plin->load_config( {} );
 
 $plin->add_app( \*DATA );
-my $app = $plin->get_app_config("foo");
+my $app = $plin->get_app_config("1234");
 
-is_deeply( $app, { qw( name foo port 1234 app bar.psgi ) }, "cf loaded");
+is_deeply( $app, { qw( port 1234 app bar.psgi ) }, "cf loaded");
 
 # note explain $plin;
 
-is_deeply( $plin->get_app_config( $app->{name} ), $app, "same app via name" );
 is_deeply( $plin->get_app_config( $app->{port} ), $app, "same app via port" );
 
 throws_ok {
@@ -34,5 +33,4 @@ note $@;
 
 __DATA__
 port: 1234
-name: foo
 app: bar.psgi
