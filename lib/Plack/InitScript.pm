@@ -19,7 +19,7 @@ Manage multiple psgi applications via sys V init.
 
 =cut
 
-our $VERSION = 0.0109;
+our $VERSION = 0.0110;
 
 use Carp;
 use Daemon::Control;
@@ -32,7 +32,7 @@ use fields qw(
 	config ports old_ports alias defaults
 	relaxed daemon_class
 );
-our @SERVICE_FIELDS = qw( app port user group pid_file log_file
+our @SERVICE_FIELDS = qw( app name port user group pid_file log_file
 	server server_args env dir );
 my %SERVICE_FIELDS;
 $SERVICE_FIELDS{$_} = 1 for @SERVICE_FIELDS; # make hash for search
@@ -155,8 +155,17 @@ sub add_app {
 
 	# avoid collisions
 	if ($self->{ports}{$port}) {
-		croak __PACKAGE__.": ports overlap: $port";
+		croak __PACKAGE__.": port overlaps: $port";
 		# TODO moar details
+	};
+
+	# add human readable name
+	if (defined (my $alias = $app->{name})) {
+		croak __PACKAGE__.": alias must not start with digit: $alias"
+			if $alias =~ /^\d/;
+		croak __PACKAGE__.": alias overlaps: $alias"
+			if exists $self->{alias}{$alias};
+		$self->{alias}{$alias} = $port;
 	};
 
 	$self->{ports}{$port} = $app;
@@ -174,6 +183,7 @@ sub del_app {
 
 	foreach (@apps) {
 		delete $self->{ports}{ $_->{port} };
+		exists $_->{name} and delete $self->{alias}{ $_->{name} };
 	};
 	return $self;
 };
@@ -224,9 +234,10 @@ sub get_init_options {
 
 	my $logfile = $self->_format($app->{log_file}, $app);
 	my $pidfile = $self->_format($app->{pid_file}, $app);
+	my $alias = $app->{name} ? "'$app->{name}' " : "";
 	my @args = ( "--listen", ":$app->{port}", $app->{app} );
 	my %opt = (
-		name => "$app->{port} ($app->{server})",
+		name => "$app->{port} $alias($app->{server})",
 		program => $app->{server},
 		# TODO more flexible args fmt
 		program_args => \@args,
@@ -276,6 +287,7 @@ sub get_apps {
 
 sub get_app_config {
 	my $self = shift;
+	my @ids = @_;
 
 	if (wantarray and @_ > 1) {
 		croak( __PACKAGE__.":get_app_config: multiple services "
@@ -285,7 +297,10 @@ sub get_app_config {
 	my $def = $self->{defaults} || {};
 	my @fail;
 	my @apps;
-	foreach (@_) {
+	foreach (@ids) {
+		if ($_ !~ /^\d/) {
+			$_ = $self->{alias}{$_};
+		};
 		my $app = $self->{ports}{$_};
 		if (!$app) {
 			push @fail, $_;
@@ -307,6 +322,8 @@ sub clear_apps {
 	my $self = shift;
 
 	$self->{ports} = {};
+	$self->{alias} = {};
+	$self->{old_ports} = {};
 	return $self;
 };
 
