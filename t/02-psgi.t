@@ -34,7 +34,9 @@ $plin->set_defaults( pid_file => "$dir/pid.%p", server => 'plackup',
 
 $plin->add_app({ name => 'foo', port => $port, app => "$Bin/psgi/die-soon.psgi" });
 
-note explain $plin->get_init_options($port);
+my $app = $plin->get_app_config( $port );
+note "App = ", explain $app;
+note "Init options = ", explain $plin->get_init_options( $app );
 
 my $stat = $plin->service( "start", "foo" );
 ok (-f "$dir/pid.$port", "pidfile created"); # TODO check content!

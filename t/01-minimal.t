@@ -11,7 +11,7 @@ my $plin = Plack::InitScript->new;
 $plin->load_config( {} );
 
 $plin->add_app( \*DATA );
-my $app = $plin->get_app_config("foo");
+my ($app) = $plin->get_app_config("foo");
 
 is_deeply( $app, { qw( name foo port 1234 app bar.psgi ) }, "cf loaded");
 

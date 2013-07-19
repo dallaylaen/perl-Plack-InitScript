@@ -19,14 +19,14 @@ Manage multiple psgi applications via sys V init.
 
 =cut
 
-our $VERSION = 0.0110;
+our $VERSION = 0.0111;
 
 use Carp;
 use Daemon::Control;
 use English;
 
 # use YAML::XS; # TODO eval require, fall back to YAML
-use YAML qw(LoadFile);
+use YAML qw(LoadFile DumpFile Dump Load);
 
 use fields qw(
 	config ports old_ports alias defaults
@@ -111,27 +111,47 @@ sub set_defaults {
 	return $self;
 };
 
-=head2 load_apps( [ $dir ] )
-
-Load all apps based on config, from given directory or from apps_d.
+=head2 load_apps
 
 =cut
 
 sub load_apps {
 	my $self = shift;
-	my $dir = shift;
 
-	$dir = $self->{config}{apps_d} unless defined $dir;
+	$self->clear_apps;
+
+	my @new = $self->load_dir( $self->{config}{apps_dir} );
+	$self->add_app($_) for @new;
+
+	if (defined (my $dir = $self->{config}{old_dir})) {
+		my @old = $self->load_dir($dir);
+		$self->add_app($_, old => 1) for @old;
+	};
+
+	return $self;
+};
+
+=head2 load_dir( [ $dir ] )
+
+Load all apps based on config, from given directory or from apps_d.
+
+=cut
+
+sub load_dir {
+	my $self = shift;
+	my $dir = shift;
 
 	opendir (my $dh, $dir)
 		or croak( __PACKAGE__.": failed to open $dir: $!");
 
+	my @ret;
 	while (my $fname = readdir $dh) {
 		$fname =~ /^\./ and next; # skip dot files
-		$self->add_app( "$dir/$fname" );
+		# TODO carry on if one file dies
+		push @ret, $self->_load_cf( "$dir/$fname" );
 	};
 	closedir $dh;
-	return $self;
+	return @ret;
 };
 
 =head2 add_app
@@ -140,10 +160,14 @@ sub load_apps {
 
 sub add_app {
 	my $self = shift;
-	my $app = shift;
+	my ($app, %opt) = @_;
+
+	my $old = $opt{old};
+	my $store = $old ? "old_ports" : "ports";
 
 	defined $app or croak( __PACKAGE__.": Nothing given to add_app" );
 	$app = $self->_load_cf( $app );
+	$app->{old} = 1 if $opt{old};
 
 	# TODO check for consistency
 
@@ -154,13 +178,13 @@ sub add_app {
 	my $port = $app->{port};
 
 	# avoid collisions
-	if ($self->{ports}{$port}) {
+	if ($self->{$store}{$port}) {
 		croak __PACKAGE__.": port overlaps: $port";
 		# TODO moar details
 	};
 
 	# add human readable name
-	if (defined (my $alias = $app->{name})) {
+	if (defined (my $alias = $app->{name}) and !$old) {
 		croak __PACKAGE__.": alias must not start with digit: $alias"
 			if $alias =~ /^\d/;
 		croak __PACKAGE__.": alias overlaps: $alias"
@@ -168,7 +192,7 @@ sub add_app {
 		$self->{alias}{$alias} = $port;
 	};
 
-	$self->{ports}{$port} = $app;
+	$self->{$store}{$port} = $app;
 	return $self;
 };
 
@@ -196,31 +220,33 @@ Perform SysVInit action. Offload to Daemon::Control.
 
 sub service {
 	my $self = shift;
-	my ($action, @list) = @_;
+	my $action = shift;
 
-	if (!@list) {
-		@list = keys %{ $self->{ports} };
-	} else {
-		my %known;
-		@list = map { $self->get_app_config($_)->{port} } @list;
-		@list = grep { !$known{$_}++ } @list;
+	if ($action eq 'restart') {
+		$self->service( stop => @_ );
+		return $self->service( start => @_ );
 	};
+	croak "Unknown action $action"
+		unless $action =~ /^(?:start|stop|status)$/;
 
-	(!grep { $action eq $_ } qw(start stop restart status))
-		and croak( __PACKAGE__.": unknown action $action");
+	my $method = "do_$action";
+	my @svc = $self->get_app_config( \@_, old => $action ne 'start' );
 
-	$action = "do_$action";
 	my %stat;
-	foreach (@list) {
+	foreach (@svc) {
 		my $opt = $self->get_init_options($_);
 		my $daemon = $self->{daemon_class}->new($opt);
-		$daemon->$action();
-		$stat{ $_ } = $daemon->read_pid;
+		$daemon->$method();
+		$self->rm_old_app( $_ ) if $action eq 'stop';
+		$self->save_old_app( $_ ) if $action eq 'start';
+		$stat{ $_->{port} } = $daemon->read_pid;
 	};
+
+	# TODO wait for real start/stop via async ping method
 	return \%stat;
 };
 
-=head2 get_init_options( $service_id )
+=head2 get_init_options( $app )
 
 Get Daemon::Control config for service.
 
@@ -228,9 +254,7 @@ Get Daemon::Control config for service.
 
 sub get_init_options {
 	my $self = shift;
-	my $id = shift;
-
-	my $app = $self->get_app_config($id);
+	my $app = shift;
 
 	my $logfile = $self->_format($app->{log_file}, $app);
 	my $pidfile = $self->_format($app->{pid_file}, $app);
@@ -272,47 +296,65 @@ sub _format {
 	return $str;
 };
 
-=head2 get_apps
+=head2 get_app_config( \@ids, %opt )
 
-=cut
+Load apps with given ports|aliases. Dies if any isn't found.
 
-sub get_apps {
-	my $self = shift;
-	return keys %{ $self->{ports} }
-};
-
-=head2 get_app_config
+Options: "old" = 0|1 - if true, search in "old" array as well.
 
 =cut
 
 sub get_app_config {
 	my $self = shift;
-	my @ids = @_;
+	my $list = shift;
+	my %opt = @_;
 
-	if (wantarray and @_ > 1) {
-		croak( __PACKAGE__.":get_app_config: multiple services "
-			."requested in scalar context" );
-	};
-
+	my @ids = ref $list eq 'ARRAY' ? (@$list) : ($list);
 	my $def = $self->{defaults} || {};
-	my @fail;
-	my @apps;
-	foreach (@ids) {
-		if ($_ !~ /^\d/) {
-			$_ = $self->{alias}{$_};
-		};
-		my $app = $self->{ports}{$_};
-		if (!$app) {
-			push @fail, $_;
-			next;
-		};
-		$app = { %$def, %$app };
-		push @apps, $app;
-	};
-	@fail and croak( __PACKAGE__.": get_app_config: unknown service(s): @fail");
+	my @search = $opt{old} ? qw(old_ports ports) : "ports";
 
-	return wantarray ? @apps : shift @apps;
-};
+	if (defined wantarray and !wantarray and @ids != 1) {
+		croak __PACKAGE__.":get_app_config: multiple svc requested in"
+			." scalar context";
+	};
+
+	my @missing;
+	if (!@ids) {
+		# get ALL ids
+		@ids = map { keys %$_ } map { $self->{$_} } @search;
+	} else {
+		# resolve alias
+		foreach (@ids) {
+			$_ =~ /^\D/ or next;
+			if (my $port = $self->{alias}{$_}) {
+				$_ = $port;
+			} else {
+				push @missing, $_;
+			};
+		};
+	};
+
+	# uniq
+	my %known;
+	@ids = grep { !$known{$_}++ } @ids;
+
+	# apply defaults
+	my @ret;
+	PORT: foreach my $port (@ids) {
+		foreach (@search) {
+			$self->{$_}{$port} or next;
+			push @ret, { %$def, %{ $self->{$_}{$port} } };
+			next PORT;
+		};
+	};
+
+	if (@missing) {
+		croak __PACKAGE__.":get_app_config: unknown services: "
+			. (join " ", @missing, '');
+	};
+
+	return wantarray ? @ret : $ret[0];
+}; # end get_app_config
 
 =head2 clear_apps
 
@@ -324,6 +366,38 @@ sub clear_apps {
 	$self->{ports} = {};
 	$self->{alias} = {};
 	$self->{old_ports} = {};
+	return $self;
+};
+
+=head2 save_old_app ( \%app )
+
+Save app to old_dir, if old_dir is present.
+
+=cut
+
+sub save_old_app {
+	my $self = shift;
+	my $app = shift;
+
+	my $dir = $self->{config}{old_dir};
+	DumpFile( "$dir/$app->{port}.yml", $app )
+		if $dir;
+	return $self;
+};
+
+=head2 rm_old_app ( \%app )
+
+Remove app from old_dir, if old_dir is present.
+
+=cut
+
+sub rm_old_app {
+	my $self = shift;
+	my $app = shift;
+
+	my $dir = $self->{config}{old_dir};
+	unlink ("$dir/$app->{port}.yml")
+		if $dir; # or die? need to move on...
 	return $self;
 };
 
