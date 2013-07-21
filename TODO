@@ -1,0 +1,26 @@
+Plack::InitScript roadmap.
+
+# Alpha:
+
+* Write LSB-conpatible init script, recognized by service(8) command
+* Run script on different Linuxes
+* Run script on FreeBSD
+
+# Beta:
+
+* Write robust tempdir-based tests (cover: sub=100%, stmt >= 90%)
+* Strict validation:
+    - allow no unknown options in config
+    - allow no unknown options in apps
+    - require all but port/alias/path covered in defaults section
+* Scripts & tests -T mode
+* Configurable signal (Plack wants QUIT but D::C sends TERM)
+
+# Further development
+
+* List configured apps
+* Validate configuration (w/o running stuff or dying)
+* Stop/status correctly even if config broken.
+* Check applications for consistency (perl -we 'ref (do shift) eq "CODE";')
+* Ping applications if special URL given
+* Make ping and validation async (AnyEvent?)
