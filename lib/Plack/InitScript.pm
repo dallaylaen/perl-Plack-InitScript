@@ -19,7 +19,7 @@ Manage multiple psgi applications via sys V init.
 
 =cut
 
-our $VERSION = 0.0111;
+our $VERSION = 0.0112;
 
 use Carp;
 use Daemon::Control;
@@ -39,6 +39,16 @@ $SERVICE_FIELDS{$_} = 1 for @SERVICE_FIELDS; # make hash for search
 
 =head2 new
 
+%options may include:
+
+=over
+
+=item * relaxed - skip some checks like required user/group.
+
+=item * daemon_class - replace Daemon::Control with something else.
+
+=back
+
 =cut
 
 sub new {
@@ -46,14 +56,16 @@ sub new {
 	my %opt = @_; # TODO unused
 	my $self = fields::new($class);
 
-	$self->{relaxed} = $opt{relaxed} unless $EUID == 0;
+	$self->{relaxed} = $opt{relaxed};
 	$self->{daemon_class} = $opt{daemon_class} || "Daemon::Control";
 
 	$self->clear_apps;
 	return $self;
 };
 
-=head2 load_config
+=head2 load_config( $config_file || \%hash )
+
+Load configuartion from file or hash.
 
 =cut
 
@@ -113,6 +125,8 @@ sub set_defaults {
 
 =head2 load_apps
 
+Load known applications.
+
 =cut
 
 sub load_apps {
@@ -131,37 +145,21 @@ sub load_apps {
 	return $self;
 };
 
-=head2 load_dir( [ $dir ] )
+=head2 add_app ( \%app, %options )
 
-Load all apps based on config, from given directory or from apps_d.
+Load application. Options may include:
 
-=cut
+=over
 
-sub load_dir {
-	my $self = shift;
-	my $dir = shift;
+=item * old - this is info about running app, not configuration.
 
-	opendir (my $dh, $dir)
-		or croak( __PACKAGE__.": failed to open $dir: $!");
-
-	my @ret;
-	while (my $fname = readdir $dh) {
-		$fname =~ /^\./ and next; # skip dot files
-		# TODO carry on if one file dies
-		push @ret, $self->_load_cf( "$dir/$fname" );
-	};
-	closedir $dh;
-	return @ret;
-};
-
-=head2 add_app
+=back
 
 =cut
 
 sub add_app {
 	my $self = shift;
 	my ($app, %opt) = @_;
-
 	my $old = $opt{old};
 	my $store = $old ? "old_ports" : "ports";
 
@@ -193,22 +191,6 @@ sub add_app {
 	};
 
 	$self->{$store}{$port} = $app;
-	return $self;
-};
-
-=head2 del_app
-
-=cut
-
-sub del_app {
-	my $self = shift;
-
-	my @apps = $self->get_app_config(@_);
-
-	foreach (@apps) {
-		delete $self->{ports}{ $_->{port} };
-		exists $_->{name} and delete $self->{alias}{ $_->{name} };
-	};
 	return $self;
 };
 
@@ -246,9 +228,9 @@ sub service {
 	return \%stat;
 };
 
-=head2 get_init_options( $app )
+=head2 get_init_options( \%app )
 
-Get Daemon::Control config for service.
+Transform hash in internal format into Daemon::Control compatible options.
 
 =cut
 
@@ -367,6 +349,31 @@ sub clear_apps {
 	$self->{alias} = {};
 	$self->{old_ports} = {};
 	return $self;
+};
+
+=head1 Storage-related methods.
+
+=head2 load_dir( $dir )
+
+Load all apps from given directory.
+
+=cut
+
+sub load_dir {
+	my $self = shift;
+	my $dir = shift;
+
+	opendir (my $dh, $dir)
+		or croak( __PACKAGE__.": failed to open $dir: $!");
+
+	my @ret;
+	while (my $fname = readdir $dh) {
+		$fname =~ /^\./ and next; # skip dot files
+		# TODO carry on if one file dies
+		push @ret, $self->_load_cf( "$dir/$fname" );
+	};
+	closedir $dh;
+	return @ret;
 };
 
 =head2 save_old_app ( \%app )
