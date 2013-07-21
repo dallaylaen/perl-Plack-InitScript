@@ -15,11 +15,38 @@ Manage multiple psgi applications via sys V init.
     vim /etc/plack/apps.d/foo.yml
     service plack restart foo
 
+More precisely:
+
+    use Plack::InitScript;
+
+    my $cfg = Plack::InitScript->new;
+    $cfg->load_config( "/etc/plack/config.yml" );
+    $cfg->load_apps;
+    $cfg->service( @ARGV ); # start|status|stop|restart, [ service list ]
+
+=head1 HOW IT WORKS
+
+A global plack config is a YAML file with some sane defaults and
+location where applications are.
+
+An application config is a YAML file located under certain directory
+which contains port, path to executable file, probably human-readable
+alias and other stuff like user and group.
+
+Port is believed to be unique id of an application.
+
+After starting an application, a copy of config is stored elsewhere under
+<port>.yml if needed to allow stopping it correctly even after its
+configuration is removed.
+
+This module only manages configuration. The heavy lifting is outsourced
+to C<Daemon::Control>.
+
 =head1 METHODS
 
 =cut
 
-our $VERSION = 0.0113;
+our $VERSION = 0.0114;
 
 use Carp;
 use Daemon::Control;
@@ -97,11 +124,13 @@ Load known applications.
 sub load_apps {
 	my $self = shift;
 
-	$self->clear_apps;
+	# TODO warn & should continue if config broken
 
+	# load all apps from config
 	my @new = $self->load_dir( $self->{config}{apps_dir} );
 	$self->add_app($_) for @new;
 
+	# Load already running apps if specified
 	if (defined (my $dir = $self->{config}{old_dir})) {
 		my @old = $self->load_dir($dir);
 		$self->add_app($_, old => 1) for @old;
