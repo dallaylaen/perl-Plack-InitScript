@@ -46,7 +46,7 @@ to C<Daemon::Control>.
 
 =cut
 
-our $VERSION = 0.0114;
+our $VERSION = 0.0115;
 
 use Carp;
 use Daemon::Control;
@@ -173,8 +173,9 @@ sub service {
 	return \%stat;
 };
 
-
 =head1 Methods for data manipulation
+
+The rest of this module should probably be private methods.
 
 =head2 set_defaults ( %hash )
 
@@ -447,12 +448,15 @@ Konstantin S. Uvarin, C<< <khedin at gmail.com> >>
 
 =head1 BUGS
 
+This module is currently in pre-alpha stage (it DOES start apps via plackup
+as advertized, however the init script is not done and the module is only
+tested on one machine runing Linux).
+
+Testers/developers are welcome.
+
 Please report any bugs or feature requests to C<bug-plack-initscript at rt.cpan.org>, or through
 the web interface at L<http://rt.cpan.org/NoAuth/ReportBug.html?Queue=Plack-InitScript>.  I will be notified, and then you'll
 automatically be notified of progress on your bug as I make changes.
-
-
-
 
 =head1 SUPPORT
 
@@ -464,6 +468,10 @@ You can find documentation for this module with the perldoc command.
 You can also look for information at:
 
 =over 4
+
+=item * Github: this project's repository.
+
+L<https://github.com/dallaylaen/perl-Plack-InitScript>
 
 =item * RT: CPAN's request tracker (report bugs here)
 
@@ -486,6 +494,11 @@ L<http://search.cpan.org/dist/Plack-InitScript/>
 
 =head1 ACKNOWLEDGEMENTS
 
+C<PSGI> is what this module is for.
+
+C<Daemon::Control> is used internally for the system stuff.
+
+C<Twiggy> is a PSGI server based on L<AnyEvent>.
 
 =head1 LICENSE AND COPYRIGHT
 
