@@ -19,7 +19,7 @@ Manage multiple psgi applications via sys V init.
 
 =cut
 
-our $VERSION = 0.0112;
+our $VERSION = 0.0113;
 
 use Carp;
 use Daemon::Control;
@@ -36,6 +36,8 @@ our @SERVICE_FIELDS = qw( app name port user group pid_file log_file
 	server server_args env dir );
 my %SERVICE_FIELDS;
 $SERVICE_FIELDS{$_} = 1 for @SERVICE_FIELDS; # make hash for search
+
+=head1 Public interface
 
 =head2 new
 
@@ -59,7 +61,7 @@ sub new {
 	$self->{relaxed} = $opt{relaxed};
 	$self->{daemon_class} = $opt{daemon_class} || "Daemon::Control";
 
-	$self->clear_apps;
+	$self->{$_} = {} for qw(ports old_ports alias);
 	return $self;
 };
 
@@ -85,6 +87,65 @@ sub load_config {
 
 	return $self;
 };
+
+=head2 load_apps
+
+Load known applications.
+
+=cut
+
+sub load_apps {
+	my $self = shift;
+
+	$self->clear_apps;
+
+	my @new = $self->load_dir( $self->{config}{apps_dir} );
+	$self->add_app($_) for @new;
+
+	if (defined (my $dir = $self->{config}{old_dir})) {
+		my @old = $self->load_dir($dir);
+		$self->add_app($_, old => 1) for @old;
+	};
+
+	return $self;
+};
+
+=head2 service ( "start|stop|restart|status", [ app_name, ... ] )
+
+Perform SysVInit action. Offload to Daemon::Control.
+
+=cut
+
+sub service {
+	my $self = shift;
+	my $action = shift;
+
+	if ($action eq 'restart') {
+		$self->service( stop => @_ );
+		return $self->service( start => @_ );
+	};
+	croak "Unknown action $action"
+		unless $action =~ /^(?:start|stop|status)$/;
+
+	my $method = "do_$action";
+	my @svc = $self->get_app_config( \@_, old => $action ne 'start' );
+
+	my %stat;
+	foreach (@svc) {
+		my $opt = $self->get_init_options($_);
+		my $daemon = $self->{daemon_class}->new($opt);
+		$daemon->$method();
+		$self->rm_old_app( $_ ) if $action eq 'stop';
+		$self->save_old_app( $_ ) if $action eq 'start';
+		$stat{ $_->{port} } = $daemon->read_pid;
+	};
+
+	# TODO wait for real start/stop via async ping method
+	return \%stat;
+};
+
+
+=head1 Methods for data manipulation
 
 =head2 set_defaults ( %hash )
 
@@ -120,28 +181,6 @@ sub set_defaults {
 	@error and croak( __PACKAGE__.": found errors in default values: "
 		. join "; ", @error);
 	$self->{defaults} = \%def;
-	return $self;
-};
-
-=head2 load_apps
-
-Load known applications.
-
-=cut
-
-sub load_apps {
-	my $self = shift;
-
-	$self->clear_apps;
-
-	my @new = $self->load_dir( $self->{config}{apps_dir} );
-	$self->add_app($_) for @new;
-
-	if (defined (my $dir = $self->{config}{old_dir})) {
-		my @old = $self->load_dir($dir);
-		$self->add_app($_, old => 1) for @old;
-	};
-
 	return $self;
 };
 
@@ -192,40 +231,6 @@ sub add_app {
 
 	$self->{$store}{$port} = $app;
 	return $self;
-};
-
-=head2 service ( "start|stop|restart|status", [ app_name, ... ] )
-
-Perform SysVInit action. Offload to Daemon::Control.
-
-=cut
-
-sub service {
-	my $self = shift;
-	my $action = shift;
-
-	if ($action eq 'restart') {
-		$self->service( stop => @_ );
-		return $self->service( start => @_ );
-	};
-	croak "Unknown action $action"
-		unless $action =~ /^(?:start|stop|status)$/;
-
-	my $method = "do_$action";
-	my @svc = $self->get_app_config( \@_, old => $action ne 'start' );
-
-	my %stat;
-	foreach (@svc) {
-		my $opt = $self->get_init_options($_);
-		my $daemon = $self->{daemon_class}->new($opt);
-		$daemon->$method();
-		$self->rm_old_app( $_ ) if $action eq 'stop';
-		$self->save_old_app( $_ ) if $action eq 'start';
-		$stat{ $_->{port} } = $daemon->read_pid;
-	};
-
-	# TODO wait for real start/stop via async ping method
-	return \%stat;
 };
 
 =head2 get_init_options( \%app )
@@ -337,19 +342,6 @@ sub get_app_config {
 
 	return wantarray ? @ret : $ret[0];
 }; # end get_app_config
-
-=head2 clear_apps
-
-=cut
-
-sub clear_apps {
-	my $self = shift;
-
-	$self->{ports} = {};
-	$self->{alias} = {};
-	$self->{old_ports} = {};
-	return $self;
-};
 
 =head1 Storage-related methods.
 
