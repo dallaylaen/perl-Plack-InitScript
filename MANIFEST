@@ -8,9 +8,10 @@ xt/manifest.t
 xt/pod-coverage.t
 xt/pod.t
 t/01-minimal.t
-t/02-psgi.t
+t/10-real-psgi.t
 t/psgi/die-soon.psgi
 bin/plack
 t/etc/apps.d/die-soon.yml
 t/etc/config.yml
 TODO
+t/03-load-dir.t
